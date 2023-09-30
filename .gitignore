@@ -4,3 +4,4 @@ train_data_npo
 front
 state_selection_counts.csv
 model
+Dockerfile
