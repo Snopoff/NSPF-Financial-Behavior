@@ -3,6 +3,7 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 import re
+import pickle
 
 
 def train_test_split(df):
@@ -19,7 +20,7 @@ def objective(trial, df):
     X_train, y_train, X_test, y_test = train_test_split(df)
     param = {
         "verbose": -1,
-        "metric": "mae",
+        "metric": "mse",
         "random_state": 48,
         "n_estimators": 20000,
         "reg_alpha": trial.suggest_loguniform("reg_alpha", 1e-3, 10.0),
@@ -50,53 +51,47 @@ def objective(trial, df):
 
     mae = mean_absolute_error(y_test, preds)
     r2 = r2_score(y_test, preds)
-    return r2
+
     return mae, r2
 
 
-quarterly_data = pd.read_csv("clean_data/quarterly_data.csv")
-qdata_0 = quarterly_data.loc[
-    quarterly_data.cluster == 0, quarterly_data.columns != "cluster"
-]
-qdata_0 = qdata_0.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-qdata_1 = quarterly_data.loc[
-    quarterly_data.cluster == 1, quarterly_data.columns != "cluster"
-]
-qdata_1 = qdata_1.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-qdata_2 = quarterly_data.loc[
-    quarterly_data.cluster == 2, quarterly_data.columns != "cluster"
-]
-qdata_2 = qdata_2.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-qdata_3 = quarterly_data.loc[
-    quarterly_data.cluster == 3, quarterly_data.columns != "cluster"
-]
-qdata_3 = qdata_3.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-
-
-def run_optuna(df):
-    study = optuna.create_study(
-        directions=["maximize"]
-    )  # optuna.create_study(directions=["minimize", "maximize"])
-    study.optimize(lambda trial: objective(trial, df), n_trials=25)
-    return study.best_trial
+def run_optuna(df, n_trials=50):
+    study = optuna.create_study(directions=["minimize", "maximize"])
+    study.optimize(lambda trial: objective(trial, df), n_trials=n_trials)
+    return study.best_trials
 
 
 if __name__ == "__main__":
     quarterly_data = pd.read_csv("clean_data/quarterly_data.csv")
-    qdata_0 = quarterly_data.loc[
-        quarterly_data.cluster == 0, quarterly_data.columns != "cluster"
-    ]
-    qdata_0 = qdata_0.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-    qdata_1 = quarterly_data.loc[
-        quarterly_data.cluster == 1, quarterly_data.columns != "cluster"
-    ]
-    qdata_1 = qdata_1.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-    qdata_2 = quarterly_data.loc[
-        quarterly_data.cluster == 2, quarterly_data.columns != "cluster"
-    ]
-    qdata_2 = qdata_2.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-    qdata_3 = quarterly_data.loc[
-        quarterly_data.cluster == 3, quarterly_data.columns != "cluster"
-    ]
-    qdata_3 = qdata_3.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
-    num_of_trials, best_trials = run_optuna(qdata_0)
+    dataframes_slctn_cluster = [None] * 4
+    # Select all columns except cluster and slctn_number by specific value of cluster AND slctn_number
+    cluster_vals = range(4)
+    slctn_number_vals = range(4)
+
+    # Get the columns to keep
+    columns_to_keep = quarterly_data.columns.difference(
+        ["cluster", "slctn_nmbr", "prev_npo_sum"]
+    )
+
+    for cluster_val in cluster_vals:
+        dataframes_slctn_cluster[cluster_val] = [None] * 4
+        for slctn_number_val in slctn_number_vals:
+            filtered_df = quarterly_data[
+                (quarterly_data["cluster"] == cluster_val)
+                & (quarterly_data["slctn_nmbr"] == slctn_number_val)
+            ]
+            res = filtered_df[columns_to_keep]
+            res["prev_npo_sum"] = res["npo_sum"].shift(
+                1, fill_value=res.iloc[0]["npo_sum"]
+            )
+            res = res.rename(columns=lambda x: re.sub("[^A-Za-z0-9_]+", "", x))
+            dataframes_slctn_cluster[cluster_val][slctn_number_val] = res
+
+    slctn = 0
+    cluster = 3
+
+    best_trials = run_optuna(dataframes_slctn_cluster[slctn][cluster])
+    for i, trial in enumerate(best_trials):
+        print(i, trial.values)
+    with open("model/placeholder.pkl", "wb") as f:
+        pickle.dump(best_trials[0].params, f)
