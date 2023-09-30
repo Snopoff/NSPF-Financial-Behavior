@@ -1,0 +1,17 @@
+version: '3.3'
+services:
+  frontend:
+    build: ./Archive/hack
+    networks: 
+      - snopov_net
+    ports:
+      - 3000:3000
+  backend:
+    build: ./Archive/hack_back
+    networks: 
+      - snopov_net
+    ports:
+      - 3001:3001
+
+networks:
+  snopov_net:
